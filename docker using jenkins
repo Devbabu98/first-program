@@ -3,53 +3,31 @@ pipeline {
 
     environment {
         DOCKER_REGISTRY = 'your-docker-registry-url'
-        DOCKER_CREDENTIALS_ID = 'your-docker-credentials-id'
+        DOCKERFILE_PATH = 'path/to/Dockerfile'
+        DOCKER_IMAGE_NAME = 'your-docker-image-name'
         ARTIFACTORY_URL = 'your-artifactory-url'
+        ARTIFACTORY_REPO = 'your-artifactory-repository'
         ARTIFACTORY_CREDENTIALS_ID = 'your-artifactory-credentials-id'
     }
 
     stages {
-        stage('Build') {
-            steps {
-                sh 'mvn clean install'
-            }
-        }
-
-        stage('Build Docker Image') {
+        stage('Build and Push Docker Image') {
             steps {
                 script {
-                    docker.build("${DOCKER_REGISTRY}/your-docker-image-name:${env.BUILD_ID}")
-                }
-            }
-        }
+                    // Build Maven project
+                    sh 'mvn clean install'
 
-        stage('Push Docker Image to Artifactory') {
-            steps {
-                script {
-                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDENTIALS_ID}", usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
-                        docker.withRegistry("${DOCKER_REGISTRY}", "${DOCKER_USERNAME}", "${DOCKER_PASSWORD}") {
-                            docker.image("${DOCKER_REGISTRY}/your-docker-image-name:${env.BUILD_ID}").push("${env.BUILD_ID}")
-                        }
-                    }
-                }
-            }
-        }
+                    // Build Docker image
+                    docker.build("${DOCKER_IMAGE_NAME}:${env.BUILD_ID}", "-f ${DOCKERFILE_PATH} .")
 
-        stage('Tag Docker Image') {
-            steps {
-                script {
-                    docker.image("${DOCKER_REGISTRY}/your-docker-image-name:${env.BUILD_ID}").tag("${DOCKER_REGISTRY}/your-docker-image-name:latest")
-                }
-            }
-        }
+                    // Login to Docker registry
+                    docker.withRegistry("${DOCKER_REGISTRY}", "${DOCKER_REGISTRY_CREDENTIALS_ID}") {
+                        // Push Docker image
+                        docker.image("${DOCKER_IMAGE_NAME}:${env.BUILD_ID}").push("${env.BUILD_ID}")
 
-        stage('Push Tagged Docker Image to Artifactory') {
-            steps {
-                script {
-                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDENTIALS_ID}", usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
-                        docker.withRegistry("${DOCKER_REGISTRY}", "${DOCKER_USERNAME}", "${DOCKER_PASSWORD}") {
-                            docker.image("${DOCKER_REGISTRY}/your-docker-image-name:latest").push("latest")
-                        }
+                        // Tag and push Docker image as latest
+                        docker.image("${DOCKER_IMAGE_NAME}:${env.BUILD_ID}").tag("${DOCKER_IMAGE_NAME}:latest")
+                        docker.image("${DOCKER_IMAGE_NAME}:latest").push()
                     }
                 }
             }
@@ -58,7 +36,10 @@ pipeline {
 
     post {
         always {
-            // Cleanup workspace or any other post-build actions
+            // Cleanup Docker images
+            cleanWs()
+            sh "docker rmi ${DOCKER_IMAGE_NAME}:${env.BUILD_ID}"
+            sh "docker rmi ${DOCKER_IMAGE_NAME}:latest"
         }
     }
 }
