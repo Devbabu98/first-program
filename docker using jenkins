@@ -1,0 +1,64 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_REGISTRY = 'your-docker-registry-url'
+        DOCKER_CREDENTIALS_ID = 'your-docker-credentials-id'
+        ARTIFACTORY_URL = 'your-artifactory-url'
+        ARTIFACTORY_CREDENTIALS_ID = 'your-artifactory-credentials-id'
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    docker.build("${DOCKER_REGISTRY}/your-docker-image-name:${env.BUILD_ID}")
+                }
+            }
+        }
+
+        stage('Push Docker Image to Artifactory') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDENTIALS_ID}", usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                        docker.withRegistry("${DOCKER_REGISTRY}", "${DOCKER_USERNAME}", "${DOCKER_PASSWORD}") {
+                            docker.image("${DOCKER_REGISTRY}/your-docker-image-name:${env.BUILD_ID}").push("${env.BUILD_ID}")
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Tag Docker Image') {
+            steps {
+                script {
+                    docker.image("${DOCKER_REGISTRY}/your-docker-image-name:${env.BUILD_ID}").tag("${DOCKER_REGISTRY}/your-docker-image-name:latest")
+                }
+            }
+        }
+
+        stage('Push Tagged Docker Image to Artifactory') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDENTIALS_ID}", usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                        docker.withRegistry("${DOCKER_REGISTRY}", "${DOCKER_USERNAME}", "${DOCKER_PASSWORD}") {
+                            docker.image("${DOCKER_REGISTRY}/your-docker-image-name:latest").push("latest")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Cleanup workspace or any other post-build actions
+        }
+    }
+}
